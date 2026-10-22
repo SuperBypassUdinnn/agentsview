@@ -182,6 +182,7 @@ it("starts another Sync while cancellation settles and ignores the old run's pro
   await waitFor(() =>
     expect(screen.getByRole("alert").textContent).toContain("Chrome Sync is already running."),
   );
+  expect(p.onimported).not.toHaveBeenCalled();
   expect(screen.queryByText("Server conflict text")).toBeNull();
   expect(reportSyncFailed).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({ code: "claude_ai_sync_running" }),
@@ -193,13 +194,13 @@ it("starts another Sync while cancellation settles and ignores the old run's pro
   expect(screen.getByText("7 conversations processed...")).toBeTruthy();
   progress[0]!({ imported: 128, updated: 0, skipped: 0, errors: 0 });
   rejectOld(new Error("Stopped old run"));
-  await waitFor(() => expect(p.onimported).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(p.onimported).toHaveBeenCalledOnce());
   expect(screen.getByText("7 conversations processed...")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
   expect(signals[1]!.aborted).toBe(false);
   resolveNew(stats);
   await waitFor(() => expect(screen.getByText("312 conversations processed")).toBeTruthy());
-  await waitFor(() => expect(p.onimported).toHaveBeenCalledTimes(3));
+  await waitFor(() => expect(p.onimported).toHaveBeenCalledTimes(2));
   await tick();
 });
 
@@ -269,11 +270,13 @@ it("clears a Sync conflict after closing while status hangs", async () => {
     }),
   );
   await fireEvent.click(syncButton());
+  await waitFor(() =>
+    expect(screen.getByRole("alert").textContent).toContain("Chrome Sync is already running."),
+  );
   await waitFor(() => expect(chromeStatus).toHaveBeenCalledTimes(2));
   await view.rerender({ ...p, open: false });
   await view.rerender({ ...p, open: true });
   resolve(ready);
-  await waitFor(() => expect(p.onimported).toHaveBeenCalledOnce());
   await tick();
   expect(screen.queryByText("Chrome Sync is already running.")).toBeNull();
 });

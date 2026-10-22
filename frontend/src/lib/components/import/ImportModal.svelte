@@ -134,6 +134,7 @@
     const callbacks = { onProgress: (stats: ImportStats) => {
       if (controller === syncController) progressStats = stats;
     } };
+    let refreshAfterSync = true;
     try {
       const stats = await syncClaudeAI(host, callbacks, controller.signal);
       if (!controller.signal.aborted) result = stats;
@@ -146,13 +147,14 @@
         syncFlag = e.code ?? null;
       } else if (e instanceof ApiError && e.code === "claude_ai_sync_running") {
         syncError = m.import_claude_sync_running();
+        refreshAfterSync = false;
       } else {
         syncError = e instanceof Error ? e.message : m.import_failed();
       }
     }
     finally {
       endSync(controller);
-      onimported();
+      if (refreshAfterSync) onimported();
     }
   }
 
