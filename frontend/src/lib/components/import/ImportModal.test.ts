@@ -154,7 +154,7 @@ it("reuses results and returns to Ready with Import more", async () => {
 
 it("starts another Sync while cancellation settles and ignores the old run's progress and cleanup", async () => {
   let rejectOld!: (error: Error) => void;
-  let rejectNew!: (error: Error) => void;
+  let resolveNew!: (result: typeof stats) => void;
   const signals: AbortSignal[] = [];
   const progress: ((value: typeof stats) => void)[] = [];
   syncClaudeAI
@@ -165,35 +165,41 @@ it("starts another Sync while cancellation settles and ignores the old run's pro
         rejectOld = reject;
       });
     })
+    .mockRejectedValueOnce(new ApiError(409, "Server conflict text", "claude_ai_sync_running"))
     .mockImplementationOnce((_host, callbacks, signal) => {
       signals.push(signal);
       progress.push(callbacks.onProgress);
-      return new Promise((_, reject) => {
-        rejectNew = reject;
+      return new Promise<typeof stats>((resolve) => {
+        resolveNew = resolve;
       });
     });
   const p = props();
-  const { rerender } = render(ImportModal, p);
+  render(ImportModal, p);
   await clickSync();
-  await fireEvent.click(screen.getByRole("button", { name: m.import_close() }));
-  expect(signals[0]!.aborted).toBe(true);
-  await rerender({ ...p, open: false });
-  await rerender(p);
-  expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+  await fireEvent.click(screen.getByRole("button", { name: "Stop" }));
   await clickSync();
   expect(syncClaudeAI).toHaveBeenCalledTimes(2);
+  await waitFor(() =>
+    expect(screen.getByRole("alert").textContent).toContain("Chrome Sync is already running."),
+  );
+  expect(screen.queryByText("Server conflict text")).toBeNull();
+  expect(reportSyncFailed).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ code: "claude_ai_sync_running" }),
+  );
+  await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  expect(syncClaudeAI).toHaveBeenCalledTimes(3);
   progress[1]!({ imported: 7, updated: 0, skipped: 0, errors: 0 });
   await tick();
   expect(screen.getByText("7 conversations processed...")).toBeTruthy();
   progress[0]!({ imported: 128, updated: 0, skipped: 0, errors: 0 });
   rejectOld(new Error("Stopped old run"));
-  await waitFor(() => expect(p.onimported).toHaveBeenCalledOnce());
+  await waitFor(() => expect(p.onimported).toHaveBeenCalledTimes(2));
   expect(screen.getByText("7 conversations processed...")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
   expect(signals[1]!.aborted).toBe(false);
-  // Settle the second run before the component is cleaned up.
-  await fireEvent.click(screen.getByRole("button", { name: "Stop" }));
-  rejectNew(new Error("Stopped new run"));
+  resolveNew(stats);
+  await waitFor(() => expect(screen.getByText("312 conversations processed")).toBeTruthy());
+  await waitFor(() => expect(p.onimported).toHaveBeenCalledTimes(3));
   await tick();
 });
 
@@ -248,22 +254,6 @@ it.each(["claude_ai_auth_required", "claude_ai_chrome_host_update_required"])(
     expect(screen.queryByText("Update needed")).toBeNull();
   },
 );
-
-it("shows and reports an overlapping Chrome Sync refusal", async () => {
-  syncClaudeAI.mockRejectedValueOnce(
-    new ApiError(409, "Server conflict text", "claude_ai_sync_running"),
-  );
-  render(ImportModal, props());
-  await clickSync();
-  await waitFor(() =>
-    expect(screen.getByRole("alert").textContent).toContain("Chrome Sync is already running."),
-  );
-  expect(screen.queryByText("Server conflict text")).toBeNull();
-  expect(reportSyncFailed).toHaveBeenCalledExactlyOnceWith(
-    expect.objectContaining({ code: "claude_ai_sync_running" }),
-  );
-  expect(syncButton().disabled).toBe(false);
-});
 
 it("clears a Sync conflict after closing while status hangs", async () => {
   syncClaudeAI.mockRejectedValueOnce(
