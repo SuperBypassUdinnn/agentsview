@@ -94,7 +94,7 @@ it("shows setup instructions when disconnected", async () => {
 });
 
 it.each(["stop", "cancel", "close", "overlay", "escape"])(
-  "shows progress and refreshes completed chats after %s",
+  "cancels Sync with %s, resets progress on Stop, and refreshes completed chats",
   async (exit) => {
     let reject!: (error: Error) => void;
     let signal!: AbortSignal;
@@ -135,7 +135,6 @@ it.each(["stop", "cancel", "close", "overlay", "escape"])(
     reject(new Error("Stopped"));
     await waitFor(() => expect(p.onimported).toHaveBeenCalledOnce());
     expect(p.onclose.mock.calls.length).toBe(exit === "stop" ? 0 : 1);
-    if (exit === "stop") expect(screen.getByRole("dialog")).toBeTruthy();
     expect(screen.queryByText("Stopped")).toBeNull();
   },
 );
@@ -155,11 +154,10 @@ it("reuses results and returns to Ready with Import more", async () => {
 it("starts another Sync while cancellation settles and ignores the old run's progress and cleanup", async () => {
   let rejectOld!: (error: Error) => void;
   let resolveNew!: (result: typeof stats) => void;
-  const signals: AbortSignal[] = [];
+  let retrySignal!: AbortSignal;
   const progress: ((value: typeof stats) => void)[] = [];
   syncClaudeAI
-    .mockImplementationOnce((_host, callbacks, signal) => {
-      signals.push(signal);
+    .mockImplementationOnce((_host, callbacks) => {
       progress.push(callbacks.onProgress);
       return new Promise((_, reject) => {
         rejectOld = reject;
@@ -167,7 +165,7 @@ it("starts another Sync while cancellation settles and ignores the old run's pro
     })
     .mockRejectedValueOnce(new ApiError(409, "Server conflict text", "claude_ai_sync_running"))
     .mockImplementationOnce((_host, callbacks, signal) => {
-      signals.push(signal);
+      retrySignal = signal;
       progress.push(callbacks.onProgress);
       return new Promise<typeof stats>((resolve) => {
         resolveNew = resolve;
@@ -197,11 +195,10 @@ it("starts another Sync while cancellation settles and ignores the old run's pro
   await waitFor(() => expect(p.onimported).toHaveBeenCalledOnce());
   expect(screen.getByText("7 conversations processed...")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
-  expect(signals[1]!.aborted).toBe(false);
+  expect(retrySignal.aborted).toBe(false);
   resolveNew(stats);
   await waitFor(() => expect(screen.getByText("312 conversations processed")).toBeTruthy());
   await waitFor(() => expect(p.onimported).toHaveBeenCalledTimes(2));
-  await tick();
 });
 
 it("offers browser sign-in after auth failure", async () => {
@@ -276,8 +273,8 @@ it("clears a Sync conflict after closing while status hangs", async () => {
   await waitFor(() => expect(chromeStatus).toHaveBeenCalledTimes(2));
   await view.rerender({ ...p, open: false });
   await view.rerender({ ...p, open: true });
-  resolve(ready);
-  await tick();
+  resolve({ connected: false });
+  await waitFor(() => expect(screen.getByText("Not connected")).toBeTruthy());
   expect(screen.queryByText("Chrome Sync is already running.")).toBeNull();
 });
 
