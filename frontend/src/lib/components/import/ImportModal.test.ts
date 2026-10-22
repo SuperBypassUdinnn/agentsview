@@ -93,7 +93,7 @@ it("shows setup instructions when disconnected", async () => {
   expect(screen.getByText(m.import_claude_setup_load({ url: "chrome://extensions" }))).toBeTruthy();
 });
 
-it.each(["stop", "cancel"])(
+it.each(["stop", "cancel", "close", "overlay", "escape"])(
   "shows progress and refreshes completed chats after %s",
   async (exit) => {
     let reject!: (error: Error) => void;
@@ -114,13 +114,27 @@ it.each(["stop", "cancel"])(
     progress({ imported: 128, updated: 0, skipped: 0, errors: 0 });
     await tick();
     expect(screen.getByText("128 conversations processed...")).toBeTruthy();
-    await fireEvent.click(
-      screen.getByRole("button", { name: exit === "stop" ? "Stop" : "Cancel" }),
-    );
+    if (exit === "overlay") {
+      const overlay = screen.getByRole("dialog").parentElement!;
+      await fireEvent.pointerDown(overlay);
+      await fireEvent.pointerUp(overlay);
+      await fireEvent.click(overlay);
+    } else if (exit === "escape") {
+      await fireEvent.keyDown(window, { key: "Escape" });
+    } else {
+      const name = exit === "stop" ? "Stop" : exit === "close" ? m.import_close() : "Cancel";
+      await fireEvent.click(screen.getByRole("button", { name }));
+    }
     expect(signal.aborted).toBe(true);
-    expect(p.onclose.mock.calls.length).toBe(exit === "stop" ? 0 : 1);
+    if (exit === "stop") {
+      expect(screen.getByRole("dialog")).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+      expect(screen.queryByText("128 conversations processed...")).toBeNull();
+      expect(syncButton().disabled).toBe(false);
+    }
     reject(new Error("Stopped"));
     await waitFor(() => expect(p.onimported).toHaveBeenCalledOnce());
+    expect(p.onclose.mock.calls.length).toBe(exit === "stop" ? 0 : 1);
     if (exit === "stop") expect(screen.getByRole("dialog")).toBeTruthy();
     expect(screen.queryByText("Stopped")).toBeNull();
   },
@@ -136,6 +150,51 @@ it("reuses results and returns to Ready with Import more", async () => {
   await fireEvent.click(screen.getByRole("button", { name: "Import more" }));
   expect(screen.getByText("Connected")).toBeTruthy();
   expect(syncButton().disabled).toBe(false);
+});
+
+it("starts another Sync while cancellation settles and ignores the old run's progress and cleanup", async () => {
+  let rejectOld!: (error: Error) => void;
+  let rejectNew!: (error: Error) => void;
+  const signals: AbortSignal[] = [];
+  const progress: ((value: typeof stats) => void)[] = [];
+  syncClaudeAI
+    .mockImplementationOnce((_host, callbacks, signal) => {
+      signals.push(signal);
+      progress.push(callbacks.onProgress);
+      return new Promise((_, reject) => {
+        rejectOld = reject;
+      });
+    })
+    .mockImplementationOnce((_host, callbacks, signal) => {
+      signals.push(signal);
+      progress.push(callbacks.onProgress);
+      return new Promise((_, reject) => {
+        rejectNew = reject;
+      });
+    });
+  const p = props();
+  const { rerender } = render(ImportModal, p);
+  await clickSync();
+  await fireEvent.click(screen.getByRole("button", { name: m.import_close() }));
+  expect(signals[0]!.aborted).toBe(true);
+  await rerender({ ...p, open: false });
+  await rerender(p);
+  expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+  await clickSync();
+  expect(syncClaudeAI).toHaveBeenCalledTimes(2);
+  progress[1]!({ imported: 7, updated: 0, skipped: 0, errors: 0 });
+  await tick();
+  expect(screen.getByText("7 conversations processed...")).toBeTruthy();
+  progress[0]!({ imported: 128, updated: 0, skipped: 0, errors: 0 });
+  rejectOld(new Error("Stopped old run"));
+  await waitFor(() => expect(p.onimported).toHaveBeenCalledOnce());
+  expect(screen.getByText("7 conversations processed...")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
+  expect(signals[1]!.aborted).toBe(false);
+  // Settle the second run before the component is cleaned up.
+  await fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+  rejectNew(new Error("Stopped new run"));
+  await tick();
 });
 
 it("offers browser sign-in after auth failure", async () => {
