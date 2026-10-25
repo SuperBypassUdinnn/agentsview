@@ -78,6 +78,7 @@ func TestAntigravityProviderWorkspaceResolutionStates(t *testing.T) {
 		},
 		"conversation not listed": {
 			store: func(t *testing.T, root string) {
+				t.Helper()
 				testjsonl.WriteAntigravityWorkspaces(t, root, map[string]string{
 					"bbbbbbbb-cccc-dddd-eeee-ffffffffffff": `["file:///tmp/other-proj"]`,
 				})
@@ -86,12 +87,14 @@ func TestAntigravityProviderWorkspaceResolutionStates(t *testing.T) {
 		},
 		"no workspace folder": {
 			store: func(t *testing.T, root string) {
+				t.Helper()
 				testjsonl.WriteAntigravityWorkspaces(t, root, map[string]string{id: `[]`})
 			},
 			want: SourceCwdUnspecified,
 		},
 		"store predates workspace column": {
 			store: func(t *testing.T, root string) {
+				t.Helper()
 				conn, err := sql.Open("sqlite3", filepath.Join(root, AntigravitySummariesDBName))
 				require.NoError(t, err)
 				defer conn.Close()
@@ -104,6 +107,7 @@ func TestAntigravityProviderWorkspaceResolutionStates(t *testing.T) {
 		},
 		"remote development folder": {
 			store: func(t *testing.T, root string) {
+				t.Helper()
 				testjsonl.WriteAntigravityWorkspaces(t, root, map[string]string{
 					id: `["vscode-remote://ssh-remote%2Bbuildbox/home/dev/proj"]`,
 				})
@@ -112,6 +116,7 @@ func TestAntigravityProviderWorkspaceResolutionStates(t *testing.T) {
 		},
 		"unreadable store": {
 			store: func(t *testing.T, root string) {
+				t.Helper()
 				mustWrite(t, filepath.Join(root, AntigravitySummariesDBName),
 					[]byte("not a sqlite database, long enough to fill a header page"))
 			},
