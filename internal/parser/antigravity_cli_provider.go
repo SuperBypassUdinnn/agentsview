@@ -179,17 +179,36 @@ type antigravityCLISourceSet struct {
 }
 
 func newAntigravityCLISourceSet(cfg ProviderConfig) antigravityCLISourceSet {
-	s := antigravityCLISourceSet{
+	return antigravityCLISourceSet{
 		roots:       cleanJSONLRoots(cfg.Roots),
 		remote:      cfg.PathRewriter != nil,
-		remoteRoots: make(map[string]bool),
+		remoteRoots: antigravityRemoteRoots(cfg),
 	}
+}
+
+// antigravityRemoteRoots returns the configured roots that hold another
+// machine's sessions.
+func antigravityRemoteRoots(cfg ProviderConfig) map[string]bool {
+	roots := make(map[string]bool)
 	for root, machine := range cfg.SourceMachines {
 		if machine != "" && machine != cfg.Machine {
-			s.remoteRoots[filepath.Clean(root)] = true
+			roots[filepath.Clean(root)] = true
 		}
 	}
-	return s
+	return roots
+}
+
+func antigravityRemoteRoot(remoteRoots map[string]bool, root string) bool {
+	clean := filepath.Clean(root)
+	if remoteRoots[clean] {
+		return true
+	}
+	for configured := range remoteRoots {
+		if samePath(configured, clean) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s antigravityCLISourceSet) Discover(ctx context.Context) ([]SourceRef, error) {
@@ -235,6 +254,22 @@ func (s antigravityCLISourceSet) DiscoverEach(ctx context.Context, yield func(So
 			if err := projects.put(ctx, id, workspace, true); err != nil {
 				return errors.Join(err, projects.close())
 			}
+		}
+		// Matches buildAntigravityCLIProjectMap: the summary store only
+		// fills conversations the history and cache leave unmapped. Like
+		// those files, an unreadable store contributes nothing.
+		var putErr error
+		_ = forEachAntigravityStoreWorkspace(ctx, root, "",
+			func(id, workspace string) error {
+				if workspace == "" {
+					return nil
+				}
+				putErr = projects.put(ctx, id, workspace, false)
+				return putErr
+			},
+		)
+		if err := errors.Join(putErr, ctx.Err()); err != nil {
+			return errors.Join(err, projects.close())
 		}
 		for _, subdir := range []string{"conversations", "implicit"} {
 			dir := filepath.Join(root, subdir)
@@ -663,7 +698,7 @@ func (s antigravityCLISourceSet) newSourceRef(
 ) SourceRef {
 	cwd := normalizeAntigravityCLIWorkspace(workspace)
 	resolution := SourceCwdResolution{}
-	if s.remote || s.remoteRoot(root) {
+	if s.remote || antigravityRemoteRoot(s.remoteRoots, root) {
 		resolution.State = SourceCwdRemote
 	} else if workspace != "" && cwd == "" {
 		resolution.State = SourceCwdAmbiguous
@@ -685,19 +720,6 @@ func (s antigravityCLISourceSet) newSourceRef(
 			Workspace: workspace,
 		},
 	}
-}
-
-func (s antigravityCLISourceSet) remoteRoot(root string) bool {
-	clean := filepath.Clean(root)
-	if s.remoteRoots[clean] {
-		return true
-	}
-	for configured := range s.remoteRoots {
-		if samePath(configured, clean) {
-			return true
-		}
-	}
-	return false
 }
 
 func (s antigravityCLISourceSet) projectForID(root, id string) string {

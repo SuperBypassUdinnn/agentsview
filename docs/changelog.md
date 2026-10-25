@@ -1,5 +1,5 @@
 ---
-last_edited: 2026-10-22
+last_edited: 2026-10-25
 title: Changelog
 description: Release history for AgentsView
 ---
@@ -42,6 +42,14 @@ The latest release is
 
 - Usage notes keep a straight accent on the leading edge of the card. The
   accent no longer bends around the card's rounded corners.
+- Antigravity app and IDE sessions now show their project and working directory
+  instead of all landing in one unlabeled project. AgentsView reads each
+  conversation's workspace folder from Antigravity's
+  `conversation_summaries.db`. Antigravity CLI sessions use it too, so older
+  conversations in a folder keep their project after a newer one starts there.
+  Existing archives pick this up on the next sync, without a resync.
+- Usage → Projects labels sessions without a project as "Unassigned project"
+  instead of drawing an unnamed slice.
 - Foreground `agentsview serve` now exits with status 1 when a server is already
   running so service managers retry. `serve --background` and `daemon start`
   still exit with status 0.

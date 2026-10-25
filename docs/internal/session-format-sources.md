@@ -1,5 +1,5 @@
 ---
-last_edited: 2026-10-07
+last_edited: 2026-10-25
 ---
 
 # Session Format Source Inventory
@@ -3981,6 +3981,24 @@ schemas keep their existing ordering behavior.
   archived session's working-directory filter during sync and rebuilds,
   rechecked with synthetic stores on 2026-10-13.
 
+- **Workspace evidence (checked 2026-10-25):** The summary store's
+  `workspace_uris` column holds a JSON array of the conversation's workspace
+  folder URIs. Verified against conversations that Antigravity CLI 1.4.7 on
+  Linux wrote, whose store has the same `conversation_summaries` table:
+  `["file:///<folder>"]` for every conversation, including one that the CLI's
+  `cache/last_conversations.json` no longer mapped. The desktop app and IDE
+  read the same table for titles, but their `workspace_uris` values remain
+  unconfirmed. Agentsview takes the first `file:` URI as the session CWD and
+  derives the project from it. Windows drive URIs become backslash paths and a
+  URI with a host becomes a UNC path. A non-`file:` URI, such as a remote
+  development folder, leaves CWD empty. A missing store, row, or column leaves
+  CWD unset. An unreadable store keeps the stored CWD; a session reparsed then
+  keeps its project only when it came from a git remote, matching the engine's
+  rule for an unavailable CWD. The workspace stays out of the transcript
+  fingerprint: discovery attaches it as source CWD metadata, so a stored
+  session whose CWD differs is reparsed on the next sync. A remote root keeps
+  the workspace only as a project hint, as for the CLI.
+
 - **Change detection (checked 2026-10-20):** Parsing opens conversation
   databases and the title store read-only, which rewrites their `-shm` WAL
   index. Those `-shm` events, including removals, are non-data, matching the
@@ -4039,7 +4057,11 @@ schemas keep their existing ordering behavior.
   `workspace` value and the current CLI's `cache/last_conversations.json`
   workspace-to-conversation mapping are authoritative session CWD sources when
   the workspace is an absolute path. Agentsview prefers the first valid
-  current-cache folder for an exact conversation ID, retains the strict
+  current-cache folder for an exact conversation ID. The cache keeps only each
+  folder's latest conversation, and CLI 1.4.7 `history.jsonl` rows carry no
+  `conversationId` (checked 2026-10-25), so conversations neither maps take
+  their folder from the root's `conversation_summaries.db` `workspace_uris`,
+  as described in the `antigravity` entry. Agentsview retains the strict
   prompt/time fallback for older untagged history rows, and leaves CWD empty
   when the value is missing or relative. The exact absolute workspace remains
   the CWD. The project label is derived from the path text without probing the

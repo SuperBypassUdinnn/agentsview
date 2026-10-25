@@ -712,6 +712,17 @@ func buildAntigravityCLIProjectMap(root string) map[string]string {
 	maps.Copy(out, antigravityProjectMapFromLastConversations(
 		filepath.Join(root, "cache", "last_conversations.json"),
 	))
+	// The cache keeps only each folder's latest conversation and current
+	// history rows carry no conversation ID, so the summary store fills the
+	// conversations they leave unmapped.
+	_ = forEachAntigravityStoreWorkspace(context.Background(), root, "",
+		func(id, workspace string) error {
+			if _, ok := out[id]; !ok && workspace != "" {
+				out[id] = workspace
+			}
+			return nil
+		},
+	)
 	return out
 }
 
