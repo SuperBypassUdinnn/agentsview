@@ -399,6 +399,11 @@ func (p *antigravityCLIProvider) parseSessionWithStatus(
 			Mtime: mtime,
 		},
 	}
+	if parentCascadeID == "" {
+		// Without the reader sidecar, the summary store still names the
+		// conversation that started a sub-agent conversation.
+		parentCascadeID = antigravityStoreParent(ctx, root, id)
+	}
 	if parentCascadeID != "" && !strings.EqualFold(parentCascadeID, id) {
 		sess.ParentSessionID = antigravityCLIIDPrefix + parentCascadeID
 		sess.RelationshipType = RelSubagent
@@ -715,10 +720,10 @@ func buildAntigravityCLIProjectMap(root string) map[string]string {
 	// The cache keeps only each folder's latest conversation and current
 	// history rows carry no conversation ID, so the summary store fills the
 	// conversations they leave unmapped.
-	_ = forEachAntigravityStoreWorkspace(context.Background(), root, "",
-		func(id, workspace string) error {
-			if _, ok := out[id]; !ok && workspace != "" {
-				out[id] = workspace
+	_ = forEachAntigravityStoreSummary(context.Background(), root, "",
+		func(summary antigravityStoreSummary) error {
+			if _, ok := out[summary.id]; !ok && summary.workspace != "" {
+				out[summary.id] = summary.workspace
 			}
 			return nil
 		},

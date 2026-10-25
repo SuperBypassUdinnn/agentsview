@@ -23,23 +23,22 @@ type antigravityWorkspaces struct {
 }
 
 func loadAntigravityWorkspaces(ctx context.Context, root string) antigravityWorkspaces {
-	workspaces := antigravityWorkspaces{byID: make(map[string]string)}
-	workspaces.err = forEachAntigravityStoreWorkspace(ctx, root, "",
-		func(id, workspace string) error {
-			workspaces.byID[id] = workspace
-			return nil
-		},
-	)
-	return workspaces
+	return loadAntigravityWorkspacesFor(ctx, root, "")
 }
 
 // loadAntigravityWorkspace reads one conversation's workspace, for lookups
 // that resolve a single source.
 func loadAntigravityWorkspace(ctx context.Context, root, id string) antigravityWorkspaces {
-	workspaces := antigravityWorkspaces{byID: make(map[string]string, 1)}
-	workspaces.err = forEachAntigravityStoreWorkspace(ctx, root, id,
-		func(id, workspace string) error {
-			workspaces.byID[id] = workspace
+	return loadAntigravityWorkspacesFor(ctx, root, id)
+}
+
+func loadAntigravityWorkspacesFor(ctx context.Context, root, id string) antigravityWorkspaces {
+	workspaces := antigravityWorkspaces{byID: make(map[string]string)}
+	workspaces.err = forEachAntigravityStoreSummary(ctx, root, id,
+		func(summary antigravityStoreSummary) error {
+			if summary.hasWorkspace {
+				workspaces.byID[summary.id] = summary.workspace
+			}
 			return nil
 		},
 	)
@@ -63,14 +62,44 @@ func (w antigravityWorkspaces) cwdResolution(id string) SourceCwdResolution {
 	return SourceCwdResolution{State: SourceCwdResolved, Path: workspace}
 }
 
-// forEachAntigravityStoreWorkspace yields each conversation in the root's
-// summary store that records a workspace, with its first workspace folder as
-// a local path. A workspace that is not a local folder, such as a remote
-// development URI, yields "". When id is set, only that conversation is read.
-// A missing store, table, or column yields nothing: builds that predate the
-// column record no workspace.
-func forEachAntigravityStoreWorkspace(
-	ctx context.Context, root, id string, yield func(id, workspace string) error,
+// antigravityStoreParent returns the conversation that started id, as the
+// root's summary store records it, or "" when it records none. Sub-agent
+// conversations, such as a research agent the main conversation invokes,
+// are stored as conversations of their own that name their parent.
+func antigravityStoreParent(ctx context.Context, root, id string) string {
+	var parent string
+	_ = forEachAntigravityStoreSummary(ctx, root, id,
+		func(summary antigravityStoreSummary) error {
+			parent = summary.parentID
+			return nil
+		},
+	)
+	if strings.EqualFold(parent, id) {
+		return ""
+	}
+	return parent
+}
+
+// antigravityStoreSummary is what one summary-store row says about a
+// conversation outside its transcript.
+type antigravityStoreSummary struct {
+	id string
+	// workspace is the first workspace folder as a local path, or "" when the
+	// folder is not local. hasWorkspace reports whether any folder is named.
+	workspace    string
+	hasWorkspace bool
+	// parentID is the canonical ID of the conversation that started this
+	// one, or "".
+	parentID string
+}
+
+// forEachAntigravityStoreSummary yields each conversation row in the root's
+// summary store. When id is set, only that conversation is read. A missing
+// store or table yields nothing, and a missing workspace or parent column
+// yields rows without that value: builds that predate the columns record
+// neither.
+func forEachAntigravityStoreSummary(
+	ctx context.Context, root, id string, yield func(antigravityStoreSummary) error,
 ) error {
 	path := filepath.Join(root, AntigravitySummariesDBName)
 	info, err := os.Lstat(path)
@@ -89,17 +118,26 @@ func forEachAntigravityStoreWorkspace(
 		return err
 	}
 	defer db.Close()
-	var hasID, hasWorkspaces bool
+	var hasID, hasWorkspaces, hasParent bool
 	if err := db.QueryRowContext(ctx, `SELECT
 		EXISTS(SELECT 1 FROM pragma_table_info('conversation_summaries') WHERE name = 'conversation_id'),
-		EXISTS(SELECT 1 FROM pragma_table_info('conversation_summaries') WHERE name = 'workspace_uris')`,
-	).Scan(&hasID, &hasWorkspaces); err != nil {
+		EXISTS(SELECT 1 FROM pragma_table_info('conversation_summaries') WHERE name = 'workspace_uris'),
+		EXISTS(SELECT 1 FROM pragma_table_info('conversation_summaries') WHERE name = 'parent_conversation_id')`,
+	).Scan(&hasID, &hasWorkspaces, &hasParent); err != nil {
 		return err
 	}
-	if !hasID || !hasWorkspaces {
+	if !hasID || !hasWorkspaces && !hasParent {
 		return nil
 	}
-	query := "SELECT conversation_id, workspace_uris FROM conversation_summaries"
+	workspaceColumn, parentColumn := "''", "''"
+	if hasWorkspaces {
+		workspaceColumn = "workspace_uris"
+	}
+	if hasParent {
+		parentColumn = "parent_conversation_id"
+	}
+	query := "SELECT conversation_id, COALESCE(" + workspaceColumn + ", ''), COALESCE(" +
+		parentColumn + ", '') FROM conversation_summaries"
 	var args []any
 	if id != "" {
 		query += " WHERE conversation_id = ?"
@@ -111,15 +149,22 @@ func forEachAntigravityStoreWorkspace(
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var conversationID, uris string
-		if err := rows.Scan(&conversationID, &uris); err != nil {
+		var conversationID, uris, parentID string
+		if err := rows.Scan(&conversationID, &uris, &parentID); err != nil {
 			return err
 		}
-		first := gjson.Get(uris, "0")
-		if conversationID == "" || first.Type != gjson.String {
+		if conversationID == "" {
 			continue
 		}
-		if err := yield(conversationID, antigravityWorkspacePath(first.Str)); err != nil {
+		summary := antigravityStoreSummary{
+			id:       conversationID,
+			parentID: canonicalAgyCascadeID(strings.TrimSpace(parentID)),
+		}
+		if first := gjson.Get(uris, "0"); first.Type == gjson.String {
+			summary.workspace = antigravityWorkspacePath(first.Str)
+			summary.hasWorkspace = true
+		}
+		if err := yield(summary); err != nil {
 			return err
 		}
 	}

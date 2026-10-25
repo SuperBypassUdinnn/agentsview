@@ -259,12 +259,12 @@ func (s antigravityCLISourceSet) DiscoverEach(ctx context.Context, yield func(So
 		// fills conversations the history and cache leave unmapped. Like
 		// those files, an unreadable store contributes nothing.
 		var putErr error
-		_ = forEachAntigravityStoreWorkspace(ctx, root, "",
-			func(id, workspace string) error {
-				if workspace == "" {
+		_ = forEachAntigravityStoreSummary(ctx, root, "",
+			func(summary antigravityStoreSummary) error {
+				if summary.workspace == "" {
 					return nil
 				}
-				putErr = projects.put(ctx, id, workspace, false)
+				putErr = projects.put(ctx, summary.id, summary.workspace, false)
 				return putErr
 			},
 		)
@@ -838,6 +838,7 @@ func antigravityCLIProviderCapabilities() Capabilities {
 		Content: ContentCapabilities{
 			FirstMessage:         CapabilitySupported,
 			Cwd:                  CapabilitySupported,
+			Relationships:        CapabilitySupported,
 			Thinking:             CapabilitySupported,
 			ToolCalls:            CapabilitySupported,
 			ToolResults:          CapabilitySupported,

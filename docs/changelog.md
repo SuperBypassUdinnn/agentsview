@@ -48,6 +48,11 @@ The latest release is
   `conversation_summaries.db`. Antigravity CLI sessions use it too, so older
   conversations in a folder keep their project after a newer one starts there.
   Existing archives pick this up on the next sync, without a resync.
+- Antigravity sub-agent conversations, such as a research agent the main
+  conversation starts, now nest under that conversation in the app, IDE, and
+  CLI. Existing Antigravity sessions are reparsed once in place on upgrade.
+- A full resync no longer drops the project identity of a session that gained a
+  working directory since the previous archive was written.
 - Usage → Projects labels sessions without a project as "Unassigned project"
   instead of drawing an unnamed slice.
 - Foreground `agentsview serve` now exits with status 1 when a server is already

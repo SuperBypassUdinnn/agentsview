@@ -20,6 +20,10 @@ func TestAntigravityProviderUsesRecordedWorkspace(t *testing.T) {
 		id:                                     `["file:///tmp/ws-proj","file:///tmp/second-folder"]`,
 		"bbbbbbbb-cccc-dddd-eeee-ffffffffffff": `["file:///tmp/other-proj"]`,
 	})
+	// A sub-agent conversation names the conversation that started it.
+	testjsonl.WriteAntigravityParents(t, root, map[string]string{
+		id: "CCCCCCCC-DDDD-EEEE-FFFF-000000000000",
+	})
 
 	provider, ok := NewProvider(AgentAntigravity, ProviderConfig{
 		Roots: []string{root}, Machine: "devbox",
@@ -64,6 +68,8 @@ func TestAntigravityProviderUsesRecordedWorkspace(t *testing.T) {
 	session := outcome.Results[0].Result.Session
 	assert.Equal(t, "/tmp/ws-proj", session.Cwd)
 	assert.Equal(t, "ws_proj", session.Project)
+	assert.Equal(t, "antigravity:cccccccc-dddd-eeee-ffff-000000000000", session.ParentSessionID)
+	assert.Equal(t, RelSubagent, session.RelationshipType)
 }
 
 func TestAntigravityProviderWorkspaceResolutionStates(t *testing.T) {
@@ -143,6 +149,7 @@ func TestAntigravityProviderWorkspaceResolutionStates(t *testing.T) {
 			require.Len(t, outcome.Results, 1)
 			assert.Empty(t, outcome.Results[0].Result.Session.Cwd)
 			assert.Empty(t, outcome.Results[0].Result.Session.Project)
+			assert.Empty(t, outcome.Results[0].Result.Session.ParentSessionID)
 		})
 	}
 }

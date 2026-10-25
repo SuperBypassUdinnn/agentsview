@@ -163,6 +163,10 @@ func (p *antigravityProvider) Parse(
 		}, nil
 	}
 	sess.Cwd = cwd
+	if parent := antigravityStoreParent(ctx, src.Root, src.ID); parent != "" {
+		sess.ParentSessionID = antigravityIDPrefix + parent
+		sess.RelationshipType = RelSubagent
+	}
 	applyAntigravityTitle(ctx, sess, src)
 	if req.Fingerprint.Hash != "" {
 		sess.File.Hash = req.Fingerprint.Hash
@@ -672,6 +676,8 @@ func antigravityProviderCapabilities() Capabilities {
 		Content: ContentCapabilities{
 			FirstMessage:         CapabilitySupported,
 			SessionName:          CapabilitySupported,
+			Cwd:                  CapabilitySupported,
+			Relationships:        CapabilitySupported,
 			Thinking:             CapabilitySupported,
 			ToolCalls:            CapabilitySupported,
 			ToolResults:          CapabilitySupported,

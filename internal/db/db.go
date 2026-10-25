@@ -604,7 +604,11 @@ CREATE INDEX IF NOT EXISTS idx_provider_freshness_updated_at
 // (144: reconcile Hermes and Augure Desktop model usage in place.)
 // (145: restore Claude-format channel messages in place, retaining retry identities.)
 // (146: retain explicit dialogue classification for visible conversation exports.)
-const dataVersion = 146
+// (147: link Antigravity sub-agent conversations to the conversation that
+// started them, from conversation_summaries.db. Re-parse unchanged antigravity
+// and antigravity-cli sources in place; source and session identities are
+// unchanged.)
+const dataVersion = 147
 
 const archiveOnlyVersionBase = 1 << 20
 

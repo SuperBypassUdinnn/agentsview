@@ -3999,6 +3999,18 @@ schemas keep their existing ordering behavior.
   session whose CWD differs is reparsed on the next sync. A remote root keeps
   the workspace only as a project hint, as for the CLI.
 
+- **Parent evidence (checked 2026-10-25):** The summary store's
+  `parent_conversation_id` names the conversation that started a sub-agent
+  conversation. Verified with Antigravity CLI 1.4.7 on Linux: a `research`
+  sub-agent the main conversation invoked wrote its own
+  `conversations/<uuid>.db` and a summary row with the main conversation's ID,
+  `nesting_depth` 1, and `agent_name` `research`; top-level rows hold `''`.
+  Agentsview links such a conversation to its parent as a sub-agent in both
+  providers. The CLI's reader sidecar `parentCascadeId` wins when present. A
+  value that is not a conversation UUID, or that names the conversation
+  itself, is ignored. Data version 147 reparses existing `antigravity` and
+  `antigravity-cli` sources in place to add the links.
+
 - **Change detection (checked 2026-10-20):** Parsing opens conversation
   databases and the title store read-only, which rewrites their `-shm` WAL
   index. Those `-shm` events, including removals, are non-data, matching the
