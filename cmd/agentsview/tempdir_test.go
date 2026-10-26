@@ -54,6 +54,7 @@ func TestEnsureUsableTempDir(t *testing.T) {
 				return filepath.Join(root, "missing")
 			},
 			dataDir: func(t *testing.T, root string) string {
+				t.Helper()
 				// A regular file where the data directory should be makes
 				// creating <data>/tmp fail.
 				path := filepath.Join(root, "data")
@@ -78,7 +79,9 @@ func TestEnsureUsableTempDir(t *testing.T) {
 			ensureUsableTempDir(&stderr)
 
 			want := tt.wantTemp(root, inherited, dataDir)
-			assert.Equal(t, want, os.TempDir())
+			// The redirect is what is under test, so read the process temp
+			// directory instead of the test's own.
+			assert.Equal(t, want, os.TempDir()) //nolint:usetesting // asserts the redirect
 			if len(tt.wantOutput) == 0 {
 				assert.Empty(t, stderr.String())
 			}
@@ -86,7 +89,7 @@ func TestEnsureUsableTempDir(t *testing.T) {
 				assert.Contains(t, stderr.String(), fragment)
 			}
 			if want != inherited {
-				f, err := os.CreateTemp("", "after-redirect-*")
+				f, err := os.CreateTemp("", "after-redirect-*") //nolint:usetesting // asserts the redirect
 				require.NoError(t, err)
 				require.NoError(t, f.Close())
 				assert.Equal(t, want, filepath.Dir(f.Name()))
