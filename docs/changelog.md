@@ -57,6 +57,11 @@ The latest release is
 - Foreground `agentsview serve` now exits with status 1 when a server is already
   running so service managers retry. `serve --background` and `daemon start`
   still exit with status 0.
+- Sync no longer fails every session when AgentsView runs inside a sandbox that
+  hands it an unusable temp directory, which mostly affects Windows. SQLite
+  needs a writable temp directory for every session write. When the inherited
+  one cannot be written, AgentsView now uses `tmp/` inside the data directory
+  and prints a warning that names both directories.
 - Claude Code channel questions appear in transcripts, search, and user-message
   totals. Rewinding after a channel conversation keeps that conversation as a
   separate fork and preserves the retry's session ID and saved items. Existing
