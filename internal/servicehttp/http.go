@@ -1145,13 +1145,11 @@ func (b *httpBackend) SessionUsage(
 		return nil, errors.New("session usage: empty response")
 	}
 	out := &service.SessionUsageReport{
-		SessionUsage: db.SessionUsage{
-			SessionID: wire.SessionID, Agent: wire.Agent, Project: wire.Project,
-			TotalOutputTokens: int(wire.TotalOutputTokens), PeakContextTokens: int(wire.PeakContextTokens),
-			HasTokenData: wire.HasTokenData, Cost: wire.Cost, HasCost: wire.HasCost, CostUSD: wire.CostUsd,
-			Models: wire.Models, UnpricedModels: wire.UnpricedModels,
-			BreakdownCount: int(wire.BreakdownCount), Breakdown: wire.Breakdown,
-		},
+		SessionID: wire.SessionID, Agent: wire.Agent, Project: wire.Project,
+		TotalOutputTokens: int(wire.TotalOutputTokens), PeakContextTokens: int(wire.PeakContextTokens),
+		HasTokenData: wire.HasTokenData, Cost: wire.Cost, HasCost: wire.HasCost, CostUSD: wire.CostUsd,
+		Models: wire.Models, UnpricedModels: wire.UnpricedModels,
+		BreakdownCount: int(wire.BreakdownCount), Breakdown: wire.Breakdown,
 		Plan:     wire.PlanUsage,
 		Coverage: wire.CaptureCoverage,
 	}
