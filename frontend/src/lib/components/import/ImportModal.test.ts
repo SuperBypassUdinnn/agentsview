@@ -11,6 +11,7 @@ import { m } from "../../i18n/index.js";
 import { setLocale } from "../../paraglide/runtime.js";
 import { ApiError } from "../../api/runtime.js";
 import { sync as syncState } from "../../stores/sync.svelte.js";
+import { claudeAISync } from "../../stores/claudeAISync.svelte.js";
 
 const host = vi.hoisted(() => ({ connect: vi.fn(), close: vi.fn(), fetch: vi.fn() }));
 const getBrowserHost = vi.hoisted(() => vi.fn());
@@ -50,6 +51,8 @@ beforeEach(() => {
   void setLocale("en", { reload: false });
 });
 afterEach(() => {
+  claudeAISync.stop();
+  claudeAISync.dismiss();
   vi.useRealTimers();
   vi.resetAllMocks();
   vi.restoreAllMocks();
@@ -93,27 +96,55 @@ it("shows setup instructions when disconnected", async () => {
   expect(screen.getByText(m.import_claude_setup_load({ url: "chrome://extensions" }))).toBeTruthy();
 });
 
-it.each(["stop", "cancel", "close", "overlay", "escape"])(
-  "cancels Sync with %s, resets progress on Stop, and refreshes completed chats",
-  async (exit) => {
-    let reject!: (error: Error) => void;
-    let signal!: AbortSignal;
-    let progress!: (value: typeof stats) => void;
-    syncClaudeAI.mockImplementation((_host, callbacks, runSignal) => {
-      signal = runSignal;
-      progress = callbacks.onProgress;
-      return new Promise((_, r) => {
-        reject = r;
-      });
+function pendingSync() {
+  const run = {} as {
+    signal: AbortSignal;
+    progress: (value: typeof stats) => void;
+    resolve: (value: typeof stats) => void;
+    reject: (error: Error) => void;
+  };
+  syncClaudeAI.mockImplementation((_host, callbacks, signal) => {
+    run.signal = signal;
+    run.progress = callbacks.onProgress;
+    return new Promise((resolve, reject) => {
+      run.resolve = resolve;
+      run.reject = reject;
     });
+  });
+  return run;
+}
+
+it("cancels Sync with Stop and refreshes completed chats", async () => {
+  const run = pendingSync();
+  const p = props();
+  render(ImportModal, p);
+  await clickSync();
+  expect(screen.getByText("Syncing...")).toBeTruthy();
+  expect(screen.getByText(m.import_claude_sync_background())).toBeTruthy();
+  expect(screen.queryByText(m.import_drop_here())).toBeNull();
+  run.progress({ imported: 128, updated: 0, skipped: 0, errors: 0 });
+  await tick();
+  expect(screen.getByText("128 conversations processed...")).toBeTruthy();
+  await fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+  expect(run.signal.aborted).toBe(true);
+  expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+  expect(screen.queryByText("128 conversations processed...")).toBeNull();
+  expect(syncButton().disabled).toBe(false);
+  run.reject(new Error("Stopped"));
+  await waitFor(() => expect(p.onimported).toHaveBeenCalledOnce());
+  expect(p.onclose).not.toHaveBeenCalled();
+  expect(screen.queryByText("Stopped")).toBeNull();
+});
+
+it.each(["close button", "dialog X", "overlay", "escape"])(
+  "keeps Sync running after closing with %s and shows its progress on reopen",
+  async (exit) => {
+    const run = pendingSync();
     const p = props();
-    render(ImportModal, p);
+    const view = render(ImportModal, p);
     await clickSync();
-    expect(screen.getByText("Syncing...")).toBeTruthy();
-    expect(screen.queryByText(m.import_drop_here())).toBeNull();
-    progress({ imported: 128, updated: 0, skipped: 0, errors: 0 });
+    run.progress({ imported: 128, updated: 0, skipped: 0, errors: 0 });
     await tick();
-    expect(screen.getByText("128 conversations processed...")).toBeTruthy();
     if (exit === "overlay") {
       const overlay = screen.getByRole("dialog").parentElement!;
       await fireEvent.pointerDown(overlay);
@@ -122,22 +153,36 @@ it.each(["stop", "cancel", "close", "overlay", "escape"])(
     } else if (exit === "escape") {
       await fireEvent.keyDown(window, { key: "Escape" });
     } else {
-      const name = exit === "stop" ? "Stop" : exit === "close" ? m.import_close() : "Cancel";
+      const name = exit === "close button" ? "Close" : m.import_close();
       await fireEvent.click(screen.getByRole("button", { name }));
     }
-    expect(signal.aborted).toBe(true);
-    if (exit === "stop") {
-      expect(screen.getByRole("dialog")).toBeTruthy();
-      expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
-      expect(screen.queryByText("128 conversations processed...")).toBeNull();
-      expect(syncButton().disabled).toBe(false);
-    }
-    reject(new Error("Stopped"));
-    await waitFor(() => expect(p.onimported).toHaveBeenCalledOnce());
-    expect(p.onclose.mock.calls.length).toBe(exit === "stop" ? 0 : 1);
-    expect(screen.queryByText("Stopped")).toBeNull();
+    expect(p.onclose).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(run.signal.aborted).toBe(false);
+    run.progress({ imported: 200, updated: 0, skipped: 0, errors: 0 });
+    await view.rerender({ ...p, open: true });
+    expect(screen.getByText("200 conversations processed...")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
+    run.resolve(stats);
+    await waitFor(() => expect(screen.getByText("312 conversations processed")).toBeTruthy());
+    expect(p.onimported).toHaveBeenCalledOnce();
   },
 );
+
+it("shows a result or failure that arrived while the dialog was closed, until the next close", async () => {
+  const run = pendingSync();
+  const p = props();
+  const view = render(ImportModal, p);
+  await clickSync();
+  await view.rerender({ ...p, open: false });
+  run.reject(new Error("Network interrupted"));
+  await waitFor(() => expect(p.onimported).toHaveBeenCalledOnce());
+  await view.rerender({ ...p, open: true });
+  expect(screen.getByRole("alert").textContent).toContain("Network interrupted");
+  await view.rerender({ ...p, open: false });
+  await view.rerender({ ...p, open: true });
+  expect(screen.queryByRole("alert")).toBeNull();
+});
 
 it("reuses results and returns to Ready with Import more", async () => {
   const p = props();
