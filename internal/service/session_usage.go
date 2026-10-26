@@ -68,8 +68,8 @@ func LoadSessionUsage(
 }
 
 // SessionUsageModel sums one model's breakdown rows. HasCost is false
-// when any of the model's rows has no price, and Cost then covers only
-// the priced rows.
+// when any of the model's rows has no price. Cost then covers the priced
+// rows plus known fees, such as web searches, on the unpriced ones.
 type SessionUsageModel struct {
 	Model                    string      `json:"model"`
 	Rows                     int         `json:"rows"`
@@ -103,7 +103,6 @@ func (r *SessionUsageReport) ByModel() ([]SessionUsageModel, error) {
 		m.WebSearchRequests += row.WebSearchRequests
 		if !row.HasCost {
 			m.HasCost = false
-			continue
 		}
 		cost, err := money.Add(m.Cost, row.Cost)
 		if err != nil {
