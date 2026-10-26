@@ -1,5 +1,5 @@
 ---
-last_edited: 2026-10-22
+last_edited: 2026-10-26
 title: Changelog
 description: Release history for AgentsView
 ---
@@ -10,6 +10,12 @@ The latest release is
 ## Unreleased
 
 **New features**
+
+- Assistants connected through MCP can now explain where one session's cost came
+  from. The new `get_session_usage` tool reports the same tokens and cost as
+  `agentsview session usage`, split by model and by request, with the most
+  expensive requests first on request. It reads the archive as stored and does
+  not refresh source files first.
 
 - PostgreSQL and ClickHouse push services can use a separately managed
   collector with `service install --no-start-daemon`, avoiding competing daemons
