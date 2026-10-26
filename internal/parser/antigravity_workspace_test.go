@@ -2,8 +2,10 @@ package parser
 
 import (
 	"database/sql"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -182,8 +184,13 @@ func TestAntigravityProviderMarksRemoteWorkspace(t *testing.T) {
 			workspace := filepath.Join(localRepo, "recorded-project")
 			mustMkdir(t, filepath.Join(localRepo, ".git"))
 			mustMkdir(t, workspace)
+			// A file URI path starts with "/", before a drive letter too.
+			uri := url.URL{Scheme: "file", Path: filepath.ToSlash(workspace)}
+			if !strings.HasPrefix(uri.Path, "/") {
+				uri.Path = "/" + uri.Path
+			}
 			testjsonl.WriteAntigravityWorkspaces(t, root, map[string]string{
-				id: `["file://` + filepath.ToSlash(workspace) + `"]`,
+				id: `["` + uri.String() + `"]`,
 			})
 
 			provider, ok := NewProvider(AgentAntigravity, config(root))
