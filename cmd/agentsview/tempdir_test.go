@@ -14,7 +14,7 @@ import (
 // platform at dir, restoring them when the test ends.
 func setTempDirEnv(t *testing.T, dir string) {
 	t.Helper()
-	for _, key := range []string{"TMPDIR", "TMP", "TEMP"} {
+	for _, key := range []string{"TMPDIR", "TMP", "TEMP", "SystemTemp"} {
 		t.Setenv(key, dir)
 	}
 }
@@ -96,4 +96,23 @@ func TestEnsureUsableTempDir(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestEnsureUsableTempDirResolvesRelativeDataDir(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	t.Setenv("AGENTSVIEW_DATA_DIR", "data")
+	setTempDirEnv(t, filepath.Join(root, "missing"))
+
+	var stderr bytes.Buffer
+	ensureUsableTempDir(&stderr)
+
+	got := os.TempDir() //nolint:usetesting // asserts the redirect
+	require.True(t, filepath.IsAbs(got), "temp dir %q is relative", got)
+	gotInfo, err := os.Stat(got)
+	require.NoError(t, err)
+	wantInfo, err := os.Stat(filepath.Join(root, "data", "tmp"))
+	require.NoError(t, err)
+	assert.True(t, os.SameFile(wantInfo, gotInfo),
+		"temp dir %q is not <cwd>/data/tmp", got)
 }

@@ -35,7 +35,16 @@ func ensureUsableTempDir(stderr io.Writer) {
 			current, probeErr, err)
 		return
 	}
-	fallback := filepath.Join(dataDir, fallbackTempDirName)
+	// Child processes such as the raw parser sandbox require absolute temp
+	// paths, and a relative one would move with the working directory.
+	fallback, err := filepath.Abs(filepath.Join(dataDir, fallbackTempDirName))
+	if err != nil {
+		fmt.Fprintf(stderr,
+			"warning: temp directory %s is not writable (%v), "+
+				"and the fallback path could not be resolved: %v\n",
+			current, probeErr, err)
+		return
+	}
 	err = os.MkdirAll(fallback, 0o700)
 	if err == nil {
 		err = probeWritableDir(fallback)
@@ -59,10 +68,11 @@ func ensureUsableTempDir(stderr io.Writer) {
 }
 
 // tempDirEnvVars lists the variables os.TempDir and SQLite read for the
-// temp directory on this platform.
+// temp directory on this platform. On Windows, os.TempDir in a process
+// running as SYSTEM reads SystemTemp instead of TMP and TEMP.
 func tempDirEnvVars() []string {
 	if runtime.GOOS == "windows" {
-		return []string{"TMP", "TEMP"}
+		return []string{"TMP", "TEMP", "SystemTemp"}
 	}
 	return []string{"TMPDIR"}
 }
